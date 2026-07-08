@@ -8,11 +8,15 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -125,6 +129,7 @@ fun RecordingMapScreen(
 
     var currentLayerIndex by remember { mutableIntStateOf(0) }
     var showLayerPicker by remember { mutableStateOf(false) }
+    var latestGeoPoint by remember { mutableStateOf(GeoPoint(39.9139, 116.4105)) }
 
     // 加载历史轨迹
     LaunchedEffect(tripId) {
@@ -138,6 +143,7 @@ fun RecordingMapScreen(
         latestPoint?.let { point ->
             mapView?.let { map ->
                 val geoPoint = GeoPoint(point.latitude, point.longitude)
+                latestGeoPoint = geoPoint
                 val allPoints = historyPoints + listOf(point)
                 if (allPoints.size >= 2) {
                     trackLine?.setPoints(allPoints.map { GeoPoint(it.latitude, it.longitude) })
@@ -215,9 +221,11 @@ fun RecordingMapScreen(
             modifier = Modifier.fillMaxSize()
         )
 
-        // ===== 速度面板（左上）=====
+        // ===== 速度面板（左上，状态栏下方）=====
         Column(
-            Modifier.padding(12.dp).clip(RoundedCornerShape(12.dp))
+            Modifier.padding(start = 12.dp, top = 12.dp)
+                .windowInsetsPadding(WindowInsets.statusBars)
+                .clip(RoundedCornerShape(12.dp))
                 .background(Color.Black.copy(alpha = 0.65f)).padding(10.dp)
         ) {
             Text("${currentSpeed.toInt()}", fontSize = 30.sp, fontWeight = FontWeight.Bold, color = Color.White)
@@ -225,29 +233,33 @@ fun RecordingMapScreen(
             Text("航向 ${"%.0f".format(currentHeading)}°", fontSize = 11.sp, color = Color.White.copy(alpha = 0.5f))
         }
 
-        // ===== 当前底图名称（右上）=====
+        // ===== 当前底图名称（右上，状态栏下方）=====
         Text(
             "${ALL_LAYERS[currentLayerIndex].icon} ${ALL_LAYERS[currentLayerIndex].name}",
-            modifier = Modifier.align(Alignment.TopEnd).padding(12.dp)
+            modifier = Modifier.align(Alignment.TopEnd).padding(end = 12.dp, top = 12.dp)
+                .windowInsetsPadding(WindowInsets.statusBars)
                 .clip(RoundedCornerShape(8.dp)).background(Color.Black.copy(alpha = 0.55f)).padding(8.dp),
             color = Color.White, fontSize = 11.sp
         )
 
-        // ===== 录制状态（顶部居中）=====
+        // ===== 录制状态（顶部居中，状态栏下方）=====
         if (isRecording) {
             Row(
-                Modifier.padding(top = 12.dp).clip(RoundedCornerShape(16.dp))
+                Modifier.align(Alignment.TopCenter).padding(top = 12.dp)
+                    .windowInsetsPadding(WindowInsets.statusBars)
+                    .clip(RoundedCornerShape(16.dp))
                     .background(Color(0xFFE53935).copy(alpha = 0.85f))
-                    .padding(horizontal = 14.dp, vertical = 5.dp).align(Alignment.TopCenter)
+                    .padding(horizontal = 14.dp, vertical = 5.dp)
             ) {
                 Text("● 录制中 ${DateTimeUtils.formatDuration(elapsed)}",
                     color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
             }
         }
 
-        // ===== 底图切换按钮（左下）=====
+        // ===== 底图切换按钮 + 定位按钮（左下）=====
         Column(
-            Modifier.align(Alignment.BottomStart).padding(16.dp),
+            Modifier.align(Alignment.BottomStart).padding(start = 16.dp, bottom = 16.dp)
+                .windowInsetsPadding(WindowInsets.statusBars),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             // 底图选择器弹窗
@@ -287,11 +299,23 @@ fun RecordingMapScreen(
             ) {
                 Icon(Icons.Default.Layers, "换底图", tint = Color.White, modifier = Modifier.size(22.dp))
             }
+
+            // 定位按钮
+            FloatingActionButton(
+                onClick = {
+                    mapView?.controller?.animateTo(latestGeoPoint, mapView?.zoomLevelDouble ?: 17.0, 800L)
+                },
+                containerColor = Color(0xFF4CAF50),
+                modifier = Modifier.size(44.dp)
+            ) {
+                Icon(Icons.Default.MyLocation, "定位", tint = Color.White, modifier = Modifier.size(22.dp))
+            }
         }
 
         // ===== 底部统计条 =====
         Row(
             Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                .windowInsetsPadding(WindowInsets.statusBars)
                 .background(Color.Black.copy(alpha = 0.7f)).padding(10.dp),
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
@@ -304,7 +328,8 @@ fun RecordingMapScreen(
         // ===== 停止按钮（右下）=====
         FloatingActionButton(
             onClick = { onStop(); navController.popBackStack() },
-            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
+            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)
+                .windowInsetsPadding(WindowInsets.statusBars),
             containerColor = Color(0xFFE53935)
         ) { Icon(Icons.Default.Stop, "停止", tint = Color.White) }
     }
