@@ -120,6 +120,23 @@ fun RecordingMapScreen(
     val recentEvents by app.recordingRepository.recentEvents.collectAsState()
     val latestPoint by app.recordingRepository.latestDataPoint.collectAsState()
 
+    // 本地独立计时器（不依赖前台服务）
+    var localElapsed by remember { mutableLongStateOf(0L) }
+    var localStartTime by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(isRecording) {
+        if (isRecording) {
+            localStartTime = System.currentTimeMillis()
+            while (isActive) {
+                delay(200)
+                localElapsed = (System.currentTimeMillis() - localStartTime) / 1000
+                if (!app.recordingRepository.isRecording.value) break
+            }
+        } else {
+            localElapsed = 0L
+        }
+    }
+    val displayElapsed = if (localElapsed > 0) localElapsed else elapsed
+
     var mapInitialized by remember { mutableStateOf(false) }
     var mapView by remember { mutableStateOf<MapView?>(null) }
     var trackLine by remember { mutableStateOf<Polyline?>(null) }
@@ -286,7 +303,7 @@ fun RecordingMapScreen(
                     .background(Color(0xFFE53935).copy(alpha = 0.85f))
                     .padding(horizontal = 14.dp, vertical = 5.dp)
             ) {
-                Text("● 录制中 ${DateTimeUtils.formatDuration(elapsed)}",
+                Text("● 录制中 ${DateTimeUtils.formatDuration(displayElapsed)}",
                     color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
             }
         }
@@ -334,15 +351,35 @@ fun RecordingMapScreen(
                 Icon(Icons.Default.Layers, "换底图", tint = Color.White, modifier = Modifier.size(22.dp))
             }
 
-            // 定位按钮
+            // 定位按钮（主动请求最新位置）
+            var locating by remember { mutableStateOf(false) }
+            val scope = rememberCoroutineScope()
             FloatingActionButton(
                 onClick = {
-                    mapView?.controller?.animateTo(latestGeoPoint, mapView?.zoomLevelDouble ?: 17.0, 800L)
+                    if (locating) return@FloatingActionButton
+                    locating = true
+                    scope.launch {
+                        val loc = withContext(Dispatchers.IO) {
+                            com.drivingrecorder.service.LocationHelper(context).requestSingleLocation()
+                        }
+                        if (loc != null) {
+                            val geo = GeoPoint(loc.latitude, loc.longitude)
+                            latestGeoPoint = geo
+                            mapView?.controller?.animateTo(geo, 17.0, 800L)
+                        } else {
+                            mapView?.controller?.animateTo(latestGeoPoint, mapView?.zoomLevelDouble ?: 17.0, 800L)
+                        }
+                        locating = false
+                    }
                 },
-                containerColor = Color(0xFF4CAF50),
+                containerColor = if (locating) Color(0xFFFF9800) else Color(0xFF4CAF50),
                 modifier = Modifier.size(44.dp)
             ) {
-                Icon(Icons.Default.MyLocation, "定位", tint = Color.White, modifier = Modifier.size(22.dp))
+                Icon(
+                    Icons.Default.MyLocation, "定位",
+                    tint = Color.White,
+                    modifier = Modifier.size(if (locating) 18.dp else 22.dp)
+                )
             }
         }
 

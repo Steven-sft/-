@@ -18,9 +18,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.*
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.text.drawText
-import androidx.compose.ui.text.rememberTextMeasurer
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -189,19 +186,27 @@ data class DrivingEvent(
 // ==================== Simulated Drive Engine ====================
 
 class SimulatedDriveEngine {
-    // 武汉高速路线（与道路数据JSON匹配）
+    // 武汉高速大范围路线（模拟长距离行驶）
     private val route = listOf(
-        30.914745 to 114.045693, 30.914750 to 114.045693, 30.914754 to 114.045692,
-        30.914759 to 114.045692, 30.914764 to 114.045691, 30.914769 to 114.045691,
-        30.914774 to 114.045690, 30.914778 to 114.045690, 30.914783 to 114.045689,
-        30.914788 to 114.045689, 30.914793 to 114.045688, 30.914798 to 114.045688,
-        30.914803 to 114.045687, 30.914808 to 114.045687, 30.914813 to 114.045686,
-        30.914818 to 114.045686, 30.914823 to 114.045685, 30.914828 to 114.045685,
-        30.914833 to 114.045684, 30.914838 to 114.045684, 30.914843 to 114.045683,
-        30.914848 to 114.045683, 30.914853 to 114.045682, 30.914858 to 114.045682,
-        30.914863 to 114.045681, 30.914868 to 114.045680, 30.914873 to 114.045680,
-        30.914878 to 114.045679, 30.914883 to 114.045679, 30.914888 to 114.045678,
-        30.914893 to 114.045678, 30.914898 to 114.045677, 30.914903 to 114.045677
+        30.91474 to 114.04569, 30.91550 to 114.04500, 30.91630 to 114.04430,
+        30.91720 to 114.04360, 30.91850 to 114.04300, 30.92000 to 114.04250,
+        30.92200 to 114.04180, 30.92450 to 114.04100, 30.92700 to 114.04050,
+        30.93000 to 114.04000, 30.93300 to 114.03950, 30.93600 to 114.03880,
+        30.93900 to 114.03800, 30.94200 to 114.03750, 30.94500 to 114.03700,
+        30.94800 to 114.03650, 30.95100 to 114.03600, 30.95400 to 114.03550,
+        30.95700 to 114.03500, 30.96000 to 114.03450, 30.96300 to 114.03400,
+        30.96600 to 114.03350, 30.96900 to 114.03300, 30.97200 to 114.03250,
+        30.97500 to 114.03200, 30.97800 to 114.03150, 30.98100 to 114.03080,
+        30.98400 to 114.03000, 30.98700 to 114.02950, 30.99000 to 114.02900,
+        30.99300 to 114.02850, 30.99600 to 114.02800, 31.00000 to 114.02750,
+        31.00500 to 114.02700, 31.01000 to 114.02650, 31.01500 to 114.02600,
+        31.02000 to 114.02580, 31.02500 to 114.02560, 31.03000 to 114.02540,
+        31.03500 to 114.02520, 31.04000 to 114.02500, 31.04500 to 114.02480,
+        31.05000 to 114.02460, 31.05500 to 114.02440, 31.06000 to 114.02420,
+        31.06500 to 114.02400, 31.07000 to 114.02380, 31.07500 to 114.02360,
+        31.08000 to 114.02340, 31.08500 to 114.02320, 31.09000 to 114.02300,
+        31.09500 to 114.02280, 31.10000 to 114.02260, 31.10500 to 114.02240,
+        31.11000 to 114.02220, 31.11500 to 114.02200, 31.11550 to 114.02180
     )
     private var routeIndex = 0; private var subStep = 0f
     var speedKmh = 40f; private set
@@ -380,8 +385,6 @@ fun SatelliteMapView(
     val tileCache = remember { TileCache() }
     var zoom by remember { mutableStateOf(15) }
     var refresh by remember { mutableStateOf(0) }
-    val textMeasurer = rememberTextMeasurer()
-
     // Auto-zoom based on speed (simulated)
     LaunchedEffect(Unit) { zoom = 15 }
 
@@ -471,10 +474,9 @@ fun SatelliteMapView(
             // 白色中心
             drawCircle(Color.White, 3f, Offset(dsx.toFloat(), dsy.toFloat()))
 
-            // 文字标签 (Compose原生渲染)
-            val label = dm.label.take(16)
-            val labelStyle = TextStyle(color = Color.White, fontSize = 11.sp, background = Color.Black.copy(alpha = 0.55f))
-            drawText(textMeasurer, label, topLeft = Offset(dsx.toFloat() + 14f, dsy.toFloat() - 6f), style = labelStyle)
+            // 外圈白色描边让标记更显眼
+            drawCircle(Color.White.copy(alpha = 0.5f), radius + 2f, Offset(dsx.toFloat(), dsy.toFloat()),
+                style = Stroke(1.5f))
         }
 
         // Draw current position (blue dot with heading arrow)
@@ -566,35 +568,91 @@ fun DrivingRecorderDesktop() {
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("驾驶记录仪") },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF1A73E8), titleContentColor = Color.White)
-            )
-        },
-        bottomBar = {
-            NavigationBar {
-                NavigationBarItem(selected = currentTab == 0, onClick = { currentTab = 0 },
-                    icon = { Icon(Icons.Default.Map, "地图") }, label = { Text("轨迹地图") })
-                NavigationBarItem(selected = currentTab == 1, onClick = { currentTab = 1 },
-                    icon = { Icon(Icons.Default.Dashboard, "数据") }, label = { Text("仪表盘") })
-                NavigationBarItem(selected = currentTab == 2, onClick = { currentTab = 2 },
-                    icon = { Icon(Icons.Default.Timeline, "事件") }, label = { Text("事件(${allEvents.size})") })
-                NavigationBarItem(selected = currentTab == 3, onClick = { currentTab = 3 },
-                    icon = { Icon(Icons.Default.Share, "导出") }, label = { Text("导出") })
-            }
+    // APK 同款布局：地图全屏 + 悬浮按钮
+    Box(Modifier.fillMaxSize()) {
+        // 地图
+        SatelliteMapView(
+            centerLat = engine.latitude, centerLng = engine.longitude,
+            heading = engine.heading,
+            trackPoints = allPoints.reversed().take(500).map { it.latitude to it.longitude },
+            events = allEvents,
+            deviceMarkers = allDeviceMarkers,
+            modifier = Modifier.fillMaxSize()
+        )
+
+        // 右上角：坐标 + 设备图例
+        val leiC = allDeviceMarkers.count { it.type == "雷视" }
+        val kaC = allDeviceMarkers.count { it.type == "卡口" }
+        Column(Modifier.align(Alignment.TopEnd).padding(12.dp).clip(RoundedCornerShape(10.dp))
+            .background(Color.Black.copy(alpha = 0.65f)).padding(8.dp)) {
+            Text(String.format("%.6f", engine.latitude), fontSize = 10.sp, color = Color.White.copy(alpha = 0.8f))
+            Text(String.format("%.6f", engine.longitude), fontSize = 10.sp, color = Color.White.copy(alpha = 0.8f))
+            if (leiC > 0) Text("🩵雷视:${leiC}", fontSize = 10.sp, color = Color(0xFF00E5FF))
+            if (kaC > 0) Text("💗卡口:${kaC}", fontSize = 10.sp, color = Color(0xFFFF00FF))
         }
-    ) { padding ->
-        when (currentTab) {
-            0 -> MapTab(padding, engine, isRecording, allPoints, allEvents, elapsed, ::startRecording, ::stopRecording, roadIndex, allDeviceMarkers)
-            1 -> DashboardTab(padding, engine, isRecording, elapsed, ::startRecording, ::stopRecording)
-            2 -> EventsTab(padding, allEvents)
-            3 -> ExportTab(padding, isRecording, allPoints, allEvents, elapsed, engine, ::exportCSV, ::exportJSON)
+
+        if (isRecording) {
+            // 录制中：左上速度+桩号 + 底部信息 + 停止按钮
+            val roadPt = roadIndex.queryNearest(engine.latitude, engine.longitude)
+            Column(Modifier.padding(12.dp).clip(RoundedCornerShape(12.dp))
+                .background(Color.Black.copy(alpha = 0.65f)).padding(10.dp)) {
+                Text("${engine.speedKmh.toInt()}", fontSize = 30.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                Text("km/h · 航向${"%.0f".format(engine.heading)}°", fontSize = 11.sp, color = Color.White.copy(alpha = 0.6f))
+                roadPt?.let { pt ->
+                    Spacer(Modifier.height(4.dp))
+                    val rampTxt = if (pt.ramp.isNotEmpty()) " · ${pt.ramp}匝" else ""
+                    Text("${pt.location}$rampTxt", fontSize = 13.sp, color = Color(0xFF4CAF50), fontWeight = FontWeight.Bold)
+                }
+            }
+
+            Row(Modifier.align(Alignment.TopCenter).padding(top = 12.dp).clip(RoundedCornerShape(16.dp))
+                .background(Color(0xFFE53935).copy(alpha = 0.85f)).padding(horizontal = 14.dp, vertical = 5.dp)) {
+                Text("● 录制中 ${formatElapsed(elapsed)}", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            }
+
+            Row(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                .background(Color.Black.copy(alpha = 0.7f)).padding(10.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly) {
+                Text("${"%.2f".format(engine.totalDistance / 1000f)}km", color = Color.White, fontSize = 12.sp)
+                Text("${allPoints.size}点", color = Color.White, fontSize = 12.sp)
+                Text("${allEvents.size}事件", color = Color.White, fontSize = 12.sp)
+            }
+
+            FloatingActionButton(
+                onClick = { stopRecording() },
+                modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
+                containerColor = Color(0xFFE53935)
+            ) { Icon(Icons.Default.Stop, "停止", tint = Color.White) }
+
+        } else {
+            // 未录制：居中开始按钮 + 导出按钮
+            Column(Modifier.align(Alignment.Center).clip(RoundedCornerShape(20.dp))
+                .background(Color.Black.copy(alpha = 0.7f)).padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("驾驶记录仪", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                Spacer(Modifier.height(16.dp))
+                FloatingActionButton(
+                    onClick = { startRecording() },
+                    containerColor = Color(0xFF1A73E8), modifier = Modifier.size(72.dp)
+                ) { Icon(Icons.Default.PlayArrow, "开始", tint = Color.White, modifier = Modifier.size(40.dp)) }
+                Spacer(Modifier.height(12.dp))
+                Text("开始记录", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                if (allPoints.isNotEmpty()) {
+                    Spacer(Modifier.height(16.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = ::exportCSV) { Text("导出CSV", color = Color(0xFF4CAF50)) }
+                        TextButton(onClick = ::exportJSON) { Text("导出JSON", color = Color(0xFF2196F3)) }
+                    }
+                }
+            }
         }
     }
 }
 
+private fun formatElapsed(ms: Long): String {
+    val s = ms / 1000
+    return "${s / 60}:${String.format("%02d", s % 60)}"
+}
 // ==================== Map Tab ====================
 
 @Composable
