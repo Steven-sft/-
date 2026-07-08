@@ -1,0 +1,54 @@
+name: Build iOS IPA (Cloud)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate --spec project.yml
+
+      - name: Build archive (unsigned)
+        run: |
+          xcodebuild archive \
+            -project DrivingRecorder.xcodeproj \
+            -scheme DrivingRecorder \
+            -sdk iphoneos \
+            -configuration Release \
+            -archivePath build/DrivingRecorder.xcarchive \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            -allowProvisioningUpdates
+
+      - name: Create IPA
+        run: |
+          mkdir -p build/Payload
+          cp -R build/DrivingRecorder.xcarchive/Products/Applications/DrivingRecorder.app build/Payload/
+          cd build && zip -r DrivingRecorder-unsigned.ipa Payload/
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: DrivingRecorder-iOS-Unsigned
+          path: build/DrivingRecorder-unsigned.ipa
+          retention-days: 7
+
+      - name: Summary
+        run: |
+          echo "=================================="
+          echo "✅ IPA 构建完成 (未签名)"
+          echo "=================================="
+          echo "下载后需要通过以下方式安装："
+          echo "1. AltStore - 免费 (altstore.io)"
+          echo "2. Sideloadly - 免费 (sideloadly.io)"
+          echo "3. 苹果开发者账号签名 ($99/年)"
+          echo "=================================="

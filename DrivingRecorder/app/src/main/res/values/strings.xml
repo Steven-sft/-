@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">驾驶记录仪</string>
+    <string name="start_recording">开始记录</string>
+    <string name="stop_recording">停止记录</string>
+    <string name="recording">录制中</string>
+    <string name="trip_history">行程记录</string>
+    <string name="export_data">导出数据</string>
+    <string name="settings">设置</string>
+    <string name="speed">速度</string>
+    <string name="heading">航向角</string>
+    <string name="latitude">纬度</string>
+    <string name="longitude">经度</string>
+    <string name="altitude">海拔</string>
+    <string name="distance">距离</string>
+    <string name="duration">时长</string>
+    <string name="max_speed">最高速度</string>
+    <string name="avg_speed">平均速度</string>
+    <string name="events">事件</string>
+    <string name="no_trips">暂无行程记录</string>
+    <string name="export_csv">导出 CSV</string>
+    <string name="export_json">导出 JSON</string>
+    <string name="recording_notification_channel">驾驶记录</string>
+    <string name="recording_notification_text">正在记录驾驶数据…</string>
+    <string name="permission_location_required">需要位置权限来记录行驶轨迹</string>
+    <string name="permission_notification_required">需要通知权限来保持后台录制</string>
+    <string name="lane_change_left">向左变道</string>
+    <string name="lane_change_right">向右变道</string>
+    <string name="hard_braking">急刹车</string>
+    <string name="rapid_acceleration">急加速</string>
+    <string name="sharp_turn_left">左急转弯</string>
+    <string name="sharp_turn_right">右急转弯</string>
+</resources>

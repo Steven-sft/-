@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>驾驶记录仪</string>
+    <key>CFBundleDisplayName</key>
+    <string>驾驶记录仪</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.drivingrecorder.ios</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0.0</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>LSRequiresIPhoneOS</key>
+    <true/>
+    <key>UILaunchScreen</key>
+    <dict/>
+    <key>UISupportedInterfaceOrientations</key>
+    <array>
+        <string>UIInterfaceOrientationPortrait</string>
+        <string>UIInterfaceOrientationLandscapeLeft</string>
+        <string>UIInterfaceOrientationLandscapeRight</string>
+    </array>
+
+    <!-- 位置权限 -->
+    <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+    <string>驾驶记录仪需要持续获取您的位置信息以记录行驶轨迹、速度和航向角。</string>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>驾驶记录仪需要获取您的位置信息以记录行驶轨迹。</string>
+    <key>NSLocationAlwaysUsageDescription</key>
+    <string>驾驶记录仪需要在后台持续获取位置以完整记录驾驶数据。</string>
+
+    <!-- 运动传感器 -->
+    <key>NSMotionUsageDescription</key>
+    <string>驾驶记录仪需要访问运动传感器以检测变道、急刹车等驾驶行为。</string>
+
+    <!-- 后台模式 -->
+    <key>UIBackgroundModes</key>
+    <array>
+        <string>location</string>
+        <string>processing</string>
+    </array>
+</dict>
+</plist>
