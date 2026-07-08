@@ -29,8 +29,6 @@ import com.drivingrecorder.DrivingRecorderApp
 import com.drivingrecorder.domain.model.DataPoint
 import com.drivingrecorder.util.DateTimeUtils
 import kotlinx.coroutines.*
-import kotlin.math.cos
-import kotlin.math.sqrt
 import org.osmdroid.config.Configuration
 import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
@@ -225,21 +223,28 @@ fun RecordingMapScreen(
 
         // ===== 速度 + 桩号面板（左上，状态栏下方）=====
         var roadInfo by remember { mutableStateOf("") }
+        var roadQueryState by remember { mutableStateOf("") } // loading / ready / no-match
 
         // 查询道路里程
         LaunchedEffect(latestPoint) {
             latestPoint?.let { p ->
+                if (!app.roadIndex.isLoaded) {
+                    roadQueryState = "道路索引加载中..."
+                    return@let
+                }
+                roadQueryState = ""
                 withContext(Dispatchers.IO) {
                     val nearest = app.roadIndex.queryNearest(p.latitude, p.longitude)
                     if (nearest != null) {
-                        val distM = sqrt(
-                            (nearest.latitude - p.latitude) * 111320.0 * (nearest.latitude - p.latitude) * 111320.0 +
-                            (nearest.longitude - p.longitude) * 111320.0 * cos(Math.toRadians(p.latitude)) *
-                            (nearest.longitude - p.longitude) * 111320.0 * cos(Math.toRadians(p.latitude))
-                        )
-                        roadInfo = "${nearest.location} · ${nearest.ramp}匝" +
-                                if (distM < 100) " (${"%.0f".format(distM)}m)"
-                                else ""
+                        val dLat = (nearest.latitude - p.latitude) * 111320.0
+                        val dLng = (nearest.longitude - p.longitude) * 111320.0 * kotlin.math.cos(Math.toRadians(p.latitude))
+                        val distM = kotlin.math.sqrt(dLat * dLat + dLng * dLng)
+                        val rampText = if (nearest.ramp.isNotEmpty()) "· ${nearest.ramp}匝" else ""
+                        roadInfo = "${nearest.location}$rampText" +
+                                if (distM < 100) " 距中心${"%.0f".format(distM)}m" else ""
+                    } else {
+                        roadInfo = ""
+                        roadQueryState = if (app.roadIndex.isLoaded) "未匹配到道路" else "索引加载中..."
                     }
                 }
             }
@@ -257,6 +262,9 @@ fun RecordingMapScreen(
             if (roadInfo.isNotEmpty()) {
                 Spacer(Modifier.height(6.dp))
                 Text(roadInfo, fontSize = 12.sp, color = Color(0xFF4CAF50), fontWeight = FontWeight.Medium)
+            }
+            if (roadQueryState.isNotEmpty()) {
+                Text(roadQueryState, fontSize = 10.sp, color = Color(0xFFFF9800), fontWeight = FontWeight.Medium)
             }
         }
 
@@ -285,8 +293,7 @@ fun RecordingMapScreen(
 
         // ===== 底图切换按钮 + 定位按钮（左下）=====
         Column(
-            Modifier.align(Alignment.BottomStart).padding(start = 16.dp, bottom = 16.dp)
-                .windowInsetsPadding(WindowInsets.statusBars),
+            Modifier.align(Alignment.BottomStart).padding(start = 16.dp, bottom = 80.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             // 底图选择器弹窗
@@ -342,7 +349,6 @@ fun RecordingMapScreen(
         // ===== 底部统计条 =====
         Row(
             Modifier.align(Alignment.BottomCenter).fillMaxWidth()
-                .windowInsetsPadding(WindowInsets.statusBars)
                 .background(Color.Black.copy(alpha = 0.7f)).padding(10.dp),
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
@@ -355,8 +361,7 @@ fun RecordingMapScreen(
         // ===== 停止按钮（右下）=====
         FloatingActionButton(
             onClick = { onStop(); navController.popBackStack() },
-            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)
-                .windowInsetsPadding(WindowInsets.statusBars),
+            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
             containerColor = Color(0xFFE53935)
         ) { Icon(Icons.Default.Stop, "停止", tint = Color.White) }
     }
