@@ -29,6 +29,8 @@ import com.drivingrecorder.DrivingRecorderApp
 import com.drivingrecorder.domain.model.DataPoint
 import com.drivingrecorder.util.DateTimeUtils
 import kotlinx.coroutines.*
+import kotlin.math.cos
+import kotlin.math.sqrt
 import org.osmdroid.config.Configuration
 import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
@@ -221,7 +223,28 @@ fun RecordingMapScreen(
             modifier = Modifier.fillMaxSize()
         )
 
-        // ===== 速度面板（左上，状态栏下方）=====
+        // ===== 速度 + 桩号面板（左上，状态栏下方）=====
+        var roadInfo by remember { mutableStateOf("") }
+
+        // 查询道路里程
+        LaunchedEffect(latestPoint) {
+            latestPoint?.let { p ->
+                withContext(Dispatchers.IO) {
+                    val nearest = app.roadIndex.queryNearest(p.latitude, p.longitude)
+                    if (nearest != null) {
+                        val distM = sqrt(
+                            (nearest.latitude - p.latitude) * 111320.0 * (nearest.latitude - p.latitude) * 111320.0 +
+                            (nearest.longitude - p.longitude) * 111320.0 * cos(Math.toRadians(p.latitude)) *
+                            (nearest.longitude - p.longitude) * 111320.0 * cos(Math.toRadians(p.latitude))
+                        )
+                        roadInfo = "${nearest.location} · ${nearest.ramp}匝" +
+                                if (distM < 100) " (${"%.0f".format(distM)}m)"
+                                else ""
+                    }
+                }
+            }
+        }
+
         Column(
             Modifier.padding(start = 12.dp, top = 12.dp)
                 .windowInsetsPadding(WindowInsets.statusBars)
@@ -231,6 +254,10 @@ fun RecordingMapScreen(
             Text("${currentSpeed.toInt()}", fontSize = 30.sp, fontWeight = FontWeight.Bold, color = Color.White)
             Text("km/h", fontSize = 12.sp, color = Color.White.copy(alpha = 0.7f))
             Text("航向 ${"%.0f".format(currentHeading)}°", fontSize = 11.sp, color = Color.White.copy(alpha = 0.5f))
+            if (roadInfo.isNotEmpty()) {
+                Spacer(Modifier.height(6.dp))
+                Text(roadInfo, fontSize = 12.sp, color = Color(0xFF4CAF50), fontWeight = FontWeight.Medium)
+            }
         }
 
         // ===== 当前底图名称（右上，状态栏下方）=====
