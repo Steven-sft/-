@@ -9,24 +9,23 @@ import androidx.navigation.navArgument
 import com.drivingrecorder.ui.detail.TripDetailScreen
 import com.drivingrecorder.ui.export.ExportScreen
 import com.drivingrecorder.ui.history.HistoryScreen
-import com.drivingrecorder.ui.home.HomeScreen
+import com.drivingrecorder.ui.home.MainMapScreen
 import com.drivingrecorder.ui.recording.RecordingMapScreen
 
 @Composable
 fun NavGraph(navController: NavHostController) {
     NavHost(
         navController = navController,
-        startDestination = "home"
+        startDestination = "main"
     ) {
-        composable("home") {
-            HomeScreen(navController = navController)
+        composable("main") {
+            MainMapScreen(navController = navController)
         }
 
         composable("history") {
             HistoryScreen(navController = navController)
         }
 
-        // 录制地图界面
         composable(
             route = "recording/{tripId}",
             arguments = listOf(
@@ -37,7 +36,7 @@ fun NavGraph(navController: NavHostController) {
             RecordingMapScreen(
                 navController = navController,
                 tripId = tripId,
-                onStop = { /* 停止逻辑在 HomeViewModel 中处理 */ }
+                onStop = { }
             )
         }
 

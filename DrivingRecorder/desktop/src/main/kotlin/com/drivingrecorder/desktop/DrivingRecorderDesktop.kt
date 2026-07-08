@@ -18,6 +18,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.*
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -32,6 +35,136 @@ import javax.swing.JFileChooser
 import javax.swing.filechooser.FileNameExtensionFilter
 import kotlin.math.*
 import kotlin.random.Random as KRandom
+import kotlinx.serialization.json.*
+
+// ==================== Device Markers ====================
+
+data class DeviceMarker(
+    val lat: Double, val lng: Double,
+    val label: String,        // 设备编号/名称
+    val type: String,         // "雷视" or "卡口"
+    val info: String          // 详细信息
+)
+
+fun loadLeishiDevices(roadIndex: DesktopRoadIndex): List<DeviceMarker> {
+    val text = object{}.javaClass.classLoader.getResourceAsStream("3-雷视设备安装情况.json")?.bufferedReader()?.use { it.readText() } ?: return emptyList()
+    val arr = Json { ignoreUnknownKeys = true }.parseToJsonElement(text).jsonArray
+    val markers = mutableListOf<DeviceMarker>()
+    val seen = mutableSetOf<String>()
+
+    for (el in arr) {
+        val obj = el.jsonObject
+        val station = obj["最终位置"]?.jsonPrimitive?.content ?: continue
+        if (station.isBlank() || station == "") continue
+        val devType = obj["图纸设备类型"]?.jsonPrimitive?.content ?: ""
+        val devName = obj["设备名称"]?.jsonPrimitive?.content ?: ""
+        val toll = obj["归属收费站"]?.jsonPrimitive?.content ?: ""
+        val dir = obj["站点位置（北京向左幅，港澳向右幅）"]?.jsonPrimitive?.content ?: ""
+
+        // Parse桩号 (e.g. "K1030+800" → 1030800 meters)
+        val stationMatch = Regex("""[Kk]?(\d+)\+(\d+)""").find(station) ?: continue
+        val km = stationMatch.groupValues[1].toDoubleOrNull() ?: continue
+        val m = stationMatch.groupValues[2].toDoubleOrNull() ?: continue
+        val locationNum = km * 1000 + m
+
+        // Look up coordinates from road index
+        val nearest = roadIndex.queryNearestByStation(locationNum)
+        // 只保留桩号差距在500m以内的匹配（避免跨路段错误匹配）
+        if (nearest != null && kotlin.math.abs(nearest.locationNum - locationNum) < 500) {
+            val key = "${devType}_${station}"
+            if (seen.add(key)) {
+                markers.add(DeviceMarker(
+                    lat = nearest.lat, lng = nearest.lng,
+                    label = "$devType($devName)",
+                    type = "雷视",
+                    info = "桩号:$station 收费站:$toll 方向:$dir"
+                ))
+            }
+        }
+    }
+    return markers
+}
+
+fun loadCheckpointDevices(): List<DeviceMarker> {
+    val text = object{}.javaClass.classLoader.getResourceAsStream("试验段卡口IP映射.json")?.bufferedReader()?.use { it.readText() } ?: return emptyList()
+    val arr = Json { ignoreUnknownKeys = true }.parseToJsonElement(text).jsonArray
+    val markers = mutableListOf<DeviceMarker>()
+    val seen = mutableSetOf<String>()
+
+    for (el in arr) {
+        val obj = el.jsonObject
+        val id = obj["卡口编号"]?.jsonPrimitive?.content ?: continue
+        val lnglat = obj["lnglat"]?.jsonArray ?: continue
+        if (lnglat.size < 2) continue
+        val lng = lnglat[0].jsonPrimitive.double
+        val lat = lnglat[1].jsonPrimitive.double
+        val station = obj["里程桩号"]?.jsonPrimitive?.content ?: ""
+        val dir = obj["方向"]?.jsonPrimitive?.content ?: ""
+        val ip = obj["ip"]?.jsonPrimitive?.content ?: ""
+
+        if (seen.add(id)) {
+            markers.add(DeviceMarker(
+                lat = lat, lng = lng,
+                label = id,
+                type = "卡口",
+                info = "桩号:$station 方向:$dir IP:$ip"
+            ))
+        }
+    }
+    return markers
+}
+
+// ==================== Road Index (Desktop) ====================
+
+class DesktopRoadIndex {
+    data class RoadPt(val lat: Double, val lng: Double, val location: String, val ramp: String, val locationNum: Double)
+
+    private val points = mutableListOf<RoadPt>()
+    private val grid = HashMap<Long, MutableList<Int>>()
+    private val gridSize = 0.002
+    var loaded = false; private set
+
+    fun loadFromResource(path: String) {
+        val text = object{}.javaClass.classLoader.getResourceAsStream(path)?.bufferedReader()?.use { it.readText() } ?: return
+        val arr = Json { ignoreUnknownKeys = true }.parseToJsonElement(text).jsonArray
+        for (el in arr) {
+            val obj = el.jsonObject
+            val pt = RoadPt(
+                lat = obj["latitude"]!!.jsonPrimitive.double,
+                lng = obj["longitude"]!!.jsonPrimitive.double,
+                location = obj["location"]!!.jsonPrimitive.content,
+                ramp = obj["ramp"]?.jsonPrimitive?.content ?: "",
+                locationNum = obj["locationNum"]!!.jsonPrimitive.double * 1000.0
+            )
+            val idx = points.size; points.add(pt)
+            val key = ((pt.lng / gridSize).toLong() shl 32) or ((pt.lat / gridSize).toLong() and 0xFFFFFFFF)
+            grid.getOrPut(key) { mutableListOf() }.add(idx)
+        }
+        loaded = true
+    }
+
+    /** 通过桩号里程数值查询最近点 */
+    fun queryNearestByStation(stationMeters: Double): RoadPt? {
+        if (!loaded || points.isEmpty()) return null
+        return points.minByOrNull { abs(it.locationNum - stationMeters) }
+    }
+
+    fun queryNearest(lat: Double, lng: Double): RoadPt? {
+        if (!loaded || points.isEmpty()) return null
+        val key = ((lng / gridSize).toLong() shl 32) or ((lat / gridSize).toLong() and 0xFFFFFFFF)
+        var best: RoadPt? = null; var bestD = Double.MAX_VALUE
+        for (dx in -1L..1L) for (dy in -1L..1L) {
+            val indices = grid[key + (dx shl 32) + dy] ?: continue
+            for (i in indices) {
+                val p = points[i]
+                val dLat = (p.lat - lat) * 111320.0; val dLng = (p.lng - lng) * 111320.0 * cos(Math.toRadians(lat))
+                val d = dLat * dLat + dLng * dLng
+                if (d < bestD) { bestD = d; best = p }
+            }
+        }
+        return best
+    }
+}
 
 // ==================== Data Models ====================
 
@@ -56,16 +189,19 @@ data class DrivingEvent(
 // ==================== Simulated Drive Engine ====================
 
 class SimulatedDriveEngine {
+    // 武汉高速路线（与道路数据JSON匹配）
     private val route = listOf(
-        39.9139 to 116.4105, 39.9148 to 116.4096, 39.9157 to 116.4087,
-        39.9165 to 116.4078, 39.9170 to 116.4065, 39.9172 to 116.4052,
-        39.9170 to 116.4039, 39.9165 to 116.4026, 39.9158 to 116.4015,
-        39.9148 to 116.4008, 39.9138 to 116.4002, 39.9128 to 116.3998,
-        39.9118 to 116.3996, 39.9108 to 116.3998, 39.9098 to 116.4003,
-        39.9090 to 116.4010, 39.9085 to 116.4020, 39.9082 to 116.4030,
-        39.9080 to 116.4040, 39.9082 to 116.4050, 39.9088 to 116.4058,
-        39.9095 to 116.4062, 39.9105 to 116.4062, 39.9115 to 116.4058,
-        39.9125 to 116.4050, 39.9132 to 116.4040, 39.9135 to 116.4030
+        30.914745 to 114.045693, 30.914750 to 114.045693, 30.914754 to 114.045692,
+        30.914759 to 114.045692, 30.914764 to 114.045691, 30.914769 to 114.045691,
+        30.914774 to 114.045690, 30.914778 to 114.045690, 30.914783 to 114.045689,
+        30.914788 to 114.045689, 30.914793 to 114.045688, 30.914798 to 114.045688,
+        30.914803 to 114.045687, 30.914808 to 114.045687, 30.914813 to 114.045686,
+        30.914818 to 114.045686, 30.914823 to 114.045685, 30.914828 to 114.045685,
+        30.914833 to 114.045684, 30.914838 to 114.045684, 30.914843 to 114.045683,
+        30.914848 to 114.045683, 30.914853 to 114.045682, 30.914858 to 114.045682,
+        30.914863 to 114.045681, 30.914868 to 114.045680, 30.914873 to 114.045680,
+        30.914878 to 114.045679, 30.914883 to 114.045679, 30.914888 to 114.045678,
+        30.914893 to 114.045678, 30.914898 to 114.045677, 30.914903 to 114.045677
     )
     private var routeIndex = 0; private var subStep = 0f
     var speedKmh = 40f; private set
@@ -238,11 +374,13 @@ fun SatelliteMapView(
     centerLat: Double, centerLng: Double, heading: Float,
     trackPoints: List<Pair<Double, Double>>,
     events: List<DrivingEvent>,
+    deviceMarkers: List<DeviceMarker> = emptyList(),
     modifier: Modifier = Modifier
 ) {
     val tileCache = remember { TileCache() }
     var zoom by remember { mutableStateOf(15) }
     var refresh by remember { mutableStateOf(0) }
+    val textMeasurer = rememberTextMeasurer()
 
     // Auto-zoom based on speed (simulated)
     LaunchedEffect(Unit) { zoom = 15 }
@@ -315,9 +453,32 @@ fun SatelliteMapView(
             drawCircle(Color.White, 2f, Offset(sx.toFloat(), sy.toFloat()))
         }
 
+        // Draw device markers with labels
+        for (dm in deviceMarkers) {
+            val (dtx, dty) = Mercator.latLngToTile(dm.lat, dm.lng, zoom)
+            val dsx = (dtx - cx) * tileSize + w / 2
+            val dsy = (dty - cy) * tileSize + h / 2
+
+            // 颜色区分：卡口=品红, 雷视=青色
+            val isKakou = dm.type == "卡口"
+            val devColor = if (isKakou) Color(0xFFFF00FF) else Color(0xFF00E5FF)  // magenta vs cyan
+            val radius = 9f
+
+            // 发光背景
+            drawCircle(devColor.copy(alpha = 0.3f), radius + 6f, Offset(dsx.toFloat(), dsy.toFloat()))
+            // 主圆点
+            drawCircle(devColor, radius, Offset(dsx.toFloat(), dsy.toFloat()))
+            // 白色中心
+            drawCircle(Color.White, 3f, Offset(dsx.toFloat(), dsy.toFloat()))
+
+            // 文字标签 (Compose原生渲染)
+            val label = dm.label.take(16)
+            val labelStyle = TextStyle(color = Color.White, fontSize = 11.sp, background = Color.Black.copy(alpha = 0.55f))
+            drawText(textMeasurer, label, topLeft = Offset(dsx.toFloat() + 14f, dsy.toFloat() - 6f), style = labelStyle)
+        }
+
         // Draw current position (blue dot with heading arrow)
         val cxScreen = w / 2; val cyScreen = h / 2
-        // Pulse ring
         drawCircle(Color(0xFF448AFF).copy(alpha = 0.3f), 18f, Offset(cxScreen, cyScreen))
         drawCircle(Color.White, 8f, Offset(cxScreen, cyScreen))
         drawCircle(Color(0xFF2979FF), 6f, Offset(cxScreen, cyScreen))
@@ -337,6 +498,10 @@ fun SatelliteMapView(
 @Composable
 fun DrivingRecorderDesktop() {
     val engine = remember { SimulatedDriveEngine() }
+    val roadIndex = remember { DesktopRoadIndex().also { it.loadFromResource("3-XG-ABCDK_locations_supplement.json") } }
+    val leishiMarkers = remember { loadLeishiDevices(roadIndex) }
+    val kakouMarkers = remember { loadCheckpointDevices() }
+    val allDeviceMarkers = remember { leishiMarkers + kakouMarkers }
     var isRecording by remember { mutableStateOf(false) }
     var elapsed by remember { mutableStateOf(0L) }
     var allEvents by remember { mutableStateOf(listOf<DrivingEvent>()) }
@@ -422,7 +587,7 @@ fun DrivingRecorderDesktop() {
         }
     ) { padding ->
         when (currentTab) {
-            0 -> MapTab(padding, engine, isRecording, allPoints, allEvents, elapsed, ::startRecording, ::stopRecording)
+            0 -> MapTab(padding, engine, isRecording, allPoints, allEvents, elapsed, ::startRecording, ::stopRecording, roadIndex, allDeviceMarkers)
             1 -> DashboardTab(padding, engine, isRecording, elapsed, ::startRecording, ::stopRecording)
             2 -> EventsTab(padding, allEvents)
             3 -> ExportTab(padding, isRecording, allPoints, allEvents, elapsed, engine, ::exportCSV, ::exportJSON)
@@ -436,8 +601,14 @@ fun DrivingRecorderDesktop() {
 fun MapTab(
     padding: PaddingValues, engine: SimulatedDriveEngine, isRecording: Boolean,
     allPoints: List<DataPoint>, allEvents: List<DrivingEvent>, elapsed: Long,
-    onStart: () -> Unit, onStop: () -> Unit
+    onStart: () -> Unit, onStop: () -> Unit, roadIndex: DesktopRoadIndex,
+    deviceMarkers: List<DeviceMarker> = emptyList()
 ) {
+    // 查询道路桩号
+    val roadPt = remember(engine.latitude, engine.longitude) {
+        roadIndex.queryNearest(engine.latitude, engine.longitude)
+    }
+
     Box(Modifier.fillMaxSize().padding(padding)) {
         // Map
         SatelliteMapView(
@@ -445,10 +616,11 @@ fun MapTab(
             heading = engine.heading,
             trackPoints = allPoints.reversed().take(500).map { it.latitude to it.longitude },
             events = allEvents,
+            deviceMarkers = deviceMarkers,
             modifier = Modifier.fillMaxSize()
         )
 
-        // Speed overlay (top-left)
+        // Speed + 桩号 overlay (top-left)
         Column(
             Modifier.padding(12.dp).clip(RoundedCornerShape(12.dp))
                 .background(Color.Black.copy(alpha = 0.65f)).padding(12.dp)
@@ -456,9 +628,24 @@ fun MapTab(
             Text("${engine.speedKmh.toInt()}", fontSize = 36.sp, fontWeight = FontWeight.Bold, color = Color.White)
             Text("km/h", fontSize = 14.sp, color = Color.White.copy(alpha = 0.7f))
             Text("航向 ${"%.0f".format(engine.heading)}°", fontSize = 12.sp, color = Color.White.copy(alpha = 0.6f))
+            roadPt?.let { pt ->
+                Spacer(Modifier.height(6.dp))
+                val d = kotlin.math.sqrt(
+                    (pt.lat - engine.latitude) * 111320.0 * (pt.lat - engine.latitude) * 111320.0 +
+                    (pt.lng - engine.longitude) * 111320.0 * cos(Math.toRadians(engine.latitude)) *
+                    (pt.lng - engine.longitude) * 111320.0 * cos(Math.toRadians(engine.latitude))
+                )
+                val rampTxt = if (pt.ramp.isNotEmpty()) " · ${pt.ramp}匝" else ""
+                Text("${pt.location}$rampTxt",
+                    fontSize = 13.sp, color = Color(0xFF4CAF50), fontWeight = FontWeight.Bold)
+                if (d < 100) Text("距中心${"%.0f".format(d)}m",
+                    fontSize = 10.sp, color = Color.White.copy(alpha = 0.6f))
+            } ?: Text("道路索引加载中...", fontSize = 10.sp, color = Color(0xFFFF9800))
         }
 
-        // Info overlay (top-right)
+        // Legend + info overlay (top-right)
+        val leiShiCount = deviceMarkers.count { it.type == "雷视" }
+        val kaKouCount = deviceMarkers.count { it.type == "卡口" }
         Column(
             Modifier.padding(12.dp).clip(RoundedCornerShape(12.dp))
                 .background(Color.Black.copy(alpha = 0.65f)).padding(10.dp)
@@ -466,7 +653,10 @@ fun MapTab(
         ) {
             Text(String.format("%.6f", engine.latitude), fontSize = 11.sp, color = Color.White.copy(alpha = 0.8f))
             Text(String.format("%.6f", engine.longitude), fontSize = 11.sp, color = Color.White.copy(alpha = 0.8f))
-            Text("卫星影像", fontSize = 10.sp, color = Color(0xFF4CAF50))
+            Text("WGS84", fontSize = 10.sp, color = Color(0xFF4CAF50))
+            Spacer(Modifier.height(4.dp))
+            if (leiShiCount > 0) Text("🩵 雷视: ${leiShiCount}台", fontSize = 10.sp, color = Color(0xFF00E5FF))
+            if (kaKouCount > 0) Text("💗 卡口: ${kaKouCount}个", fontSize = 10.sp, color = Color(0xFFFF00FF))
         }
 
         // Recording indicator (top-center)
